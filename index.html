@@ -1,58 +1,84 @@
-<canvas id="c"></canvas>
 <body>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+</body>
 
 <div>
+    <button id = "toggle grid">Toggle Grid</button> 
     <label>
-        size
-        <input id = "size", type = "number">
+        Extrusion Height:
+        <input type="number" id="extrusion height" value="10">
+    </label>
+    <button id="extrude">Extrude</button>
+    <button id="group">Group</button> 
+    <label>
+        <input type="checkbox" id="select">Select</input>
     </label>
 </div>
 
 <div>
-    <label>
-        height
-        <input id = "height", type = "number">
-    </label>
+    <button id="decrease z">Decrease Z</button>
+    <button id="increase z">Increase Z</button>
+    <button id="decrease y">Decrease Y</button>
+    <button id="increase y">Increase Y</button>
+    <button id="decrease x">Decrease X</button>
+    <button id="increase x">Increase X</button>
+
+</div>
+<div>
+    <button id="rotate x">Rotate X</button>
+    <button id="rotate y">Rotate Y</button>
+    <button id="rotate z">Rotate Z</button>
+</div>  
+
+<div>
+    <button id="scale up object">Scale Object ▲</button>
+    <button id="scale down object">Scale Object ▼</button>
 </div>
 
 <div>
-    <button id = "rotate y">rotate y</button>
-    <button id = "rotate x">rotate x</button>
-    <button id = "rotate z">rotate z</button>
+    <button id="copy object">Copy Object</button>
+    <button id="delete object">Delete Object</button>   
+    <button id="save object">Save Object</button>
 </div>
 
-<div>
-    <button id = "increase y">increase y</button>
-    <button id = "increase x">increase x</button>
-    <button id = "increase z">increase z</button>
-</div>
+    
+
 
 <div>
-    <button id = "decrease y">decrease y</button>
-    <button id = "decrease x">decrease x</button>
-    <button id = "decrease z">decrease z</button>
+    <p> click to add points for extrusion, p for new object. Check select to select objects to transform</p>
+    <p> T0 group objects check select and shift click </p>
 </div>
-
-<div>
-    <button id = "extrude">extrude</button>
 
 <style>
     div{
-        left: 10px;
+        
         top: 10px;
-    }   
+        left: 10px;
+    }
 </style>
 
-<script>
+<script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+
+import * as THREE from 'three';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x0000ff)
+scene.background = new THREE.Color(0x000000)
 
 const camera = new THREE.PerspectiveCamera( 45, innerWidth / innerHeight, 1, 1000 );
 scene.add( camera );
 camera.position.set(100,100,100);
-camera.lookAt(50,50,0);
+camera.lookAt(0,0,0);
 
 
 const light = new THREE.DirectionalLight(({color: 0xbfcc10}))
@@ -63,263 +89,348 @@ const renderer = new THREE.WebGLRenderer(({antialias:true}))
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
+
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 
-let polygons = []
-let extrusions = []
-let grid = []
-let gridcircles = []
-let grid_active = null;
-let current_line = null;
-let mesh = null;
+let grid = null;
+let activeObject = null;
+let objects = [];
+let selectedObjects = [];
+let points = []
+let markers = [];
+let mode = "draw";
 
+function new_object(){
+    points = [];
+    selectedObjects = [];
+    activeObject = null;
 
-function gen_array(size){
-    const spacing = 5
+    markers.forEach(m => scene.remove(m));
+    markers = [];
+}   
 
-    if (grid_active === true) return;
-    if (size > 50) return;
-    for(let i =0;i<size; i++){
-       for(let j =0;j<size; j++) {
-        const pt = new THREE.Vector3(i * spacing,j * spacing,0)
-        grid.push(pt)
-        const material = new THREE.MeshBasicMaterial(({color : 0xffffff}))
-        const geometry = new THREE.CircleGeometry(0.5, 8)
-        const circle = new THREE.Mesh(geometry, material)
-        circle.position.copy(pt)
-        scene.add(circle)
-        gridcircles.push(circle)
-        grid_active =true;
-       }
+function createGrid(size, divisions) {
+    const gridHelper = new THREE.GridHelper(size, divisions, 0x888888, 0x444444);
+    gridHelper.rotation.x = Math.PI / 2; // Rotate to lie on the XY plane
+    return gridHelper;
+}   
+
+function createExtrusion(height) {
+    if (points.length < 2) {
+        alert("Please click at least two points to create an extrusion.");
+        return;
     }
-    console.log("array made")
 
+    const shape = new THREE.Shape(points);
+    const extrudeSettings = {
+        steps: 1,
+        depth: height,
+        bevelEnabled: false
+    };
+    const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    const material = new THREE.MeshLambertMaterial({ color: 0x00ff00 });
+    const mesh = new THREE.Mesh(geometry, material);
+
+    mesh.geometry.computeBoundingSphere();
+    mesh.geometry.computeBoundingBox();
+
+    scene.add(mesh);
+    objects.push(mesh);
+
+
+    points.length = 0; // Clear points for next extrusion
+    markers.forEach(m => scene.remove(m));
+    markers = [];
+}   
+
+const toggleGridButton = document.getElementById("toggle grid");
+toggleGridButton.addEventListener("click", () => {
+    if (grid) {
+        scene.remove(grid);
+        grid = null;
+    } else {
+        grid = createGrid(200, 20);
+        scene.add(grid);
+    }
+});     
+
+const extrusionHeightInput = document.getElementById("extrusion height");
+extrusionHeightInput.addEventListener("change", () => {
+    const height = parseFloat(extrusionHeightInput.value);
+    if (isNaN(height) || height <= 0) {
+        alert("Please enter a valid positive number for extrusion height.");
+        extrusionHeightInput.value = 10; // Reset to default
+        return;
+    }
+}); 
+renderer.domElement.addEventListener("pointerdown", (event) => {
+
+    const rect = renderer.domElement.getBoundingClientRect();
+
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    // ---------------- SELECT MODE ----------------
+    if (mode === "select") {
+
+    const intersects = raycaster.intersectObjects(objects, true);
+
+    if (intersects.length > 0) {
+
+        let clicked = intersects[0].object;
+
+        while (clicked.parent && !objects.includes(clicked)) {
+            clicked = clicked.parent;
+        }
+
+        if (event.shiftKey) {
+            // Add to selection
+            if (!selectedObjects.includes(clicked)) {
+                selectedObjects.push(clicked);
+            }
+        } else {
+            // Replace selection
+            selectedObjects = [clicked];
+        }
+
+        activeObject = clicked;
+
+        console.log("Selected objects:", selectedObjects);
+
+    } else {
+        selectedObjects = [];
+        activeObject = null;
+    }
+
+    return;
 }
 
-let distances = []
-function calc_dist(point){
-    distances = []
-    for(let i=0;i<grid.length;i++){
-        let dist = Math.sqrt(((grid[i].x - point.x)**2) + ((grid[i].y - point.y)**2))
-        distances.push(dist)
-        //console.log(dist)
-    }
-    //console.log(distances)
-    
-}
-let base_poly = []
-function draw(polygon){
-    const material = new THREE.LineBasicMaterial(({color : 0xeb079f}));
-    const geometry = new THREE.BufferGeometry().setFromPoints(polygon);
-    const line = new THREE.Line(geometry, material);
-    scene.add(line);
-    current_line = true
-}
 
-function new_line(){
-    
-    //if (current_line === false) return;
 
-    base_poly.push(base_poly[0]);
-    base_poly = []
-    polygons.push(base_poly)
-}
+    // ---------------- DRAW MODE ----------------
+    if (mode === "draw") {
 
-function extrude(height){
-    let vertices = []
-    let indices  = []
+        const intersection = new THREE.Vector3();
+        raycaster.ray.intersectPlane(plane, intersection);
 
-    let Tpoly = []
-    for(let i=0;i<base_poly.length;i++){
-        let v = base_poly[i].clone()
-        v.z += height
-        Tpoly.push(v)
-    }
+        if (intersection) {
 
-    
-    for(let i=0;i<base_poly.length;i++){
-        vertices.push(base_poly[i].x, base_poly[i].y, base_poly[i].z);
-    }
-    for(let i=0;i<Tpoly.length;i++){
-        vertices.push(Tpoly[i].x, Tpoly[i].y, Tpoly[i].z);
-    }
+            points.push(new THREE.Vector2(intersection.x, intersection.y));
 
-    let n = base_poly.length;
-    //if (n < 3) return;
+            const markerGeometry = new THREE.SphereGeometry(0.5, 8, 8);
+            const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const marker = new THREE.Mesh(markerGeometry, markerMaterial);
 
-    for(let i=0;i<n;i++){
-        let next = (i + 1) % n
-
-        let b1 = i
-        let b2 = next
-        let t1 = i + n
-        let t2 = next + n
-
-        indices.push(b1, b2, t1);
-        indices.push(b2, t2, t1);
-
-    }
-
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.setIndex(indices)
-    geometry.computeVertexNormals()
-
-    const material = new THREE.MeshStandardMaterial({
-        color: 0xaaaaaa,
-        side: THREE.DoubleSide
-    });    
-    
-    
-
-    mesh = new THREE.Mesh( geometry, material );
-    scene.add(mesh)
-    console.log(mesh)
-    extrusions.push(mesh)
-
-}
-
-function least_indice(distances){
-    
-
-    let lowest = 0 
-    for(let i =0;i<distances.length;i++){
-        if(distances[i] < distances[lowest]){
-            lowest = i
+            marker.position.set(intersection.x, intersection.y, 0);
+            scene.add(marker);
+            markers.push(marker);
         }
     }
-    console.log("lowest index:", lowest)
 
-    gridcircles[lowest].material.color.set(0xff0522)
-    return lowest;
-
-    }
-
-const keys = {};
-function onKeyDown(event) {
-    keys[event.key.toLowerCase()] = true; 
-}
-function onKeyUp(event) {
-    keys[event.key.toLowerCase()] = false;
-}
-
-window.addEventListener('keydown', onKeyDown, false);
-window.addEventListener('keyup', onKeyUp, false);
-
-const rotateButton = document.getElementById("rotate y");
-rotateButton.addEventListener("click", () => {
-    if(mesh){
-        mesh.rotation.y += Math.PI / 4;
-    }
 });
 
-const rotateXButton = document.getElementById("rotate x");
-rotateXButton.addEventListener("click", () => {
-    if(mesh){
-        mesh.rotation.x += Math.PI / 4;
-    }
-});
 
-const rotateZButton = document.getElementById("rotate z");
-rotateZButton.addEventListener("click", () => {
-    if(mesh){
-        mesh.rotation.z += Math.PI / 4;
-    }
-});
 
 const extrudeButton = document.getElementById("extrude");
 extrudeButton.addEventListener("click", () => {
-    const h = parseFloat(document.getElementById("height").value) || 10;
-    extrude(h);
-    console.log("Extruded with height:", h);
-});
-
-const increaseYButton = document.getElementById("increase y");
-increaseYButton.addEventListener("click", () => {
-    if(mesh){
-        mesh.position.y += 5;
+    const height = parseFloat(extrusionHeightInput.value);
+    if (isNaN(height) || height <= 0) {
+        alert("Please enter a valid positive number for extrusion height.");
+        extrusionHeightInput.value = 10; // Reset to default
+        return;
     }
-});
-
-const decreaseYButton = document.getElementById("decrease y");
-decreaseYButton.addEventListener("click", () => {
-    if(mesh){
-        mesh.position.y -= 5;
-    }
-});
-
-const increaseXButton = document.getElementById("increase x");
-increaseXButton.addEventListener("click", () => {
-    if(mesh){
-        mesh.position.x += 5;
-    }
+    extrudeButton.disabled = true; // Disable button to prevent multiple clicks
+    createExtrusion(height);
+    extrudeButton.disabled = false; // Re-enable button after extrusion
 }); 
 
-const decreaseXButton = document.getElementById("decrease x");
-decreaseXButton.addEventListener("click", () => {
-    if(mesh){
-        mesh.position.x -= 5;
+const selectCheckbox = document.getElementById("select");
+selectCheckbox.addEventListener("change", () => {
+    mode = selectCheckbox.checked ? "select" : "draw";
+    activeObject = null;
+});
+
+const saveObjectButton = document.getElementById("save object");
+saveObjectButton.addEventListener("click", () => {
+    if (!activeObject) {
+        alert("No active object to save. Please select an object first.");
+        return;
     }
+
+    const exporter = new GLTFExporter();
+
+    // Clone the object so we can export it standalone without scene interference
+    const exportTarget = activeObject.clone();
+
+    exporter.parse(
+        exportTarget,
+        function (result) {
+            let output, blob, filename;
+
+            if (result instanceof ArrayBuffer) {
+                // Binary GLB
+                blob = new Blob([result], { type: 'application/octet-stream' });
+                filename = 'object.glb';
+            } else {
+                // JSON GLTF
+                output = JSON.stringify(result, null, 2);
+                blob = new Blob([output], { type: 'application/json' });
+                filename = 'object.gltf';
+            }
+
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        },
+        function (error) {
+            console.error('GLTFExporter error:', error);
+            alert('Failed to export object: ' + error.message);
+        },
+        { binary: false } // Set to true to export as .glb instead
+    );
+});
+
+const groupButton = document.getElementById("group");
+groupButton.addEventListener("click", () => {
+
+    if (selectedObjects.length === 0) return;
+
+    const group = new THREE.Group();
+    scene.add(group);
+
+    // Move selected objects into group
+    selectedObjects.forEach(obj => {
+        group.add(obj);   // NOT attach
+    });
+
+    // Remove individual objects from objects array
+    objects = objects.filter(obj => !selectedObjects.includes(obj));
+
+    // Add group as new selectable object
+    objects.push(group);
+
+    // Make group the only selected object
+    selectedObjects = [group];
+    activeObject = group;
+
+});
+
+ 
+
+window.addEventListener('keydown', (event) => {
+
+    if (event.key === 'p') {
+        new_object();
+    }
+
+});
+function transformSelected(callback) {
+    selectedObjects.forEach(obj => callback(obj));
+}
+
+const zAxisButton = document.getElementById("increase z");
+zAxisButton.addEventListener("click", () => {
+    transformSelected(obj => obj.position.z += 5);
+});
+
+
+const zAxisDecreaseButton = document.getElementById("decrease z");
+zAxisDecreaseButton.addEventListener("click", () => {
+    transformSelected(obj => obj.position.z -= 5);
 }); 
 
-const decreaseZButton = document.getElementById("decrease z");
-decreaseZButton.addEventListener("click", () => {
-    if(mesh){
-        mesh.position.z -= 5;
+const yAxisButton = document.getElementById("increase y");
+yAxisButton.addEventListener("click", () => {
+    transformSelected(obj => obj.position.y += 5);
+});
+
+const yAxisDecreaseButton = document.getElementById("decrease y");
+yAxisDecreaseButton.addEventListener("click", () => {
+    transformSelected(obj => obj.position.y -= 5);
+}); 
+
+const xAxisButton = document.getElementById("increase x");
+xAxisButton.addEventListener("click", () => {
+    transformSelected(obj => obj.position.x += 5);
+});
+const xAxisDecreaseButton = document.getElementById("decrease x");
+xAxisDecreaseButton.addEventListener("click", () => {
+    transformSelected(obj => obj.position.x -= 5);
+});
+
+
+const rotateXButton = document.getElementById("rotate x");
+rotateXButton.addEventListener("click", () => {
+   transformSelected(obj => obj.rotation.x += Math.PI / 16);
+    
+}); 
+
+const rotateYButton = document.getElementById("rotate y");
+rotateYButton.addEventListener("click", () => {
+    transformSelected(obj => obj.rotation.y += Math.PI / 16);
+    
+}); 
+
+const rotateZButton = document.getElementById("rotate z");
+rotateZButton.addEventListener("click", () => {
+    transformSelected(obj => obj.rotation.z += Math.PI / 16);
+    
+});
+
+const copyObjectButton = document.getElementById("copy object");
+copyObjectButton.addEventListener("click", () => {
+    if (activeObject) {
+        const clone = activeObject.clone();
+        clone.position.x += 10; // Offset the clone to avoid overlap
+        scene.add(clone);
+        objects.push(clone); // Add the clone to the objects array for selection
     }
 });
 
-const increaseZButton = document.getElementById("increase z");
-increaseZButton.addEventListener("click", () => {
-    if(mesh){
-        mesh.position.z += 5;
+const deleteObjectButton = document.getElementById("delete object");
+deleteObjectButton.addEventListener("click", () => {
+    if (activeObject) {
+        scene.remove(activeObject);
+        objects = objects.filter(obj => obj !== activeObject); // Remove from objects array
+        activeObject = null; // Clear active object reference
     }
 });
 
-const sizeInput = document.getElementById("size")
-sizeInput.addEventListener("input", () => {
-    scene.remove(grid);
-    grid = []
-    let s = parseInt(sizeInput.value)
-    gen_array(s)
-})
-
-gen_array(20)
-
-
-renderer.domElement.addEventListener("click", (event) =>{
-  console.log("clicked");
-  const rect = renderer.domElement.getBoundingClientRect();
-
-  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-  raycaster.setFromCamera(mouse, camera);
-  const point = new THREE.Vector3();
-  raycaster.ray.intersectPlane(plane, point);
-  base_poly.push(point)
-
-  calc_dist(point)
-  least_indice(distances)
-  draw(base_poly)
+const scaleUpButton = document.getElementById("scale up object");
+scaleUpButton.addEventListener("click", () => {
+    if (activeObject) {
+        activeObject.scale.multiplyScalar(1.25); // Scale up by 25%
+    }
 });
+
+const scaleDownButton = document.getElementById("scale down object");
+scaleDownButton.addEventListener("click", () => {
+    if (activeObject) {
+        activeObject.scale.multiplyScalar(0.8); // Scale down by 20%
+    }
+});
+
 
 function animate(){
-    requestAnimationFrame(animate)
-    renderer.render(scene, camera)
-
-    if (keys['p']){
-        console.log("p pressed")
-        new_line()
-    }
-
-    
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
 
 
-}
-    
-animate()
+}   
+
+animate();
 
 </script>
+
+<div>
+    <link href="https://www.youtube.com/@lucas-sherman">>Lucas yt :https://www.youtube.com/@lucas-sherman</link>
+</div>
