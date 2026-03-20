@@ -12,6 +12,9 @@
     <label>
         <input type="checkbox" id="select">Select</input>
     </label>
+    <label>
+        <input type="color" id="color picker" value="#00ff00">Color</input>
+    </label>
 </div>
 
 <div>
@@ -32,13 +35,22 @@
 <div>
     <button id="scale up object">Scale Object ▲</button>
     <button id="scale down object">Scale Object ▼</button>
+    <label>
+        <input type="checkbox" id="axis helper">Axis Helper</input>
+    </label>
 </div>
 
 <div>
     <button id="copy object">Copy Object</button>
     <button id="delete object">Delete Object</button>   
     <button id="save object">Save Object</button>
+    <label>
+        Load Object:
+        <input type="file" id="load object" accept=".gltf,.glb">
+    </label>
 </div>
+
+<\
 
     
 
@@ -71,6 +83,7 @@
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x000000)
@@ -233,7 +246,53 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
 
 });
 
+const loadInput = document.getElementById("load object");
+const loader = new GLTFLoader();
 
+loadInput.addEventListener("change", (event) => {
+
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+
+        const contents = e.target.result;
+
+        loader.parse(contents, '', function (gltf) {
+
+            const model = gltf.scene;
+
+            scene.add(model);
+            objects.push(model);
+
+            activeObject = model;
+            selectedObjects = [model];
+
+            console.log("Loaded model:", model);
+
+        }, function (error) {
+            console.error("Error loading model:", error);
+        });
+
+    };
+
+    reader.readAsArrayBuffer(file);
+
+});
+
+const axisHelperCheckbox = document.getElementById("axis helper");
+let axisHelper = null;
+axisHelperCheckbox.addEventListener("change", () => {
+    if (axisHelperCheckbox.checked) {
+        axisHelper = new THREE.AxesHelper(20);
+        scene.add(axisHelper);
+    } else {
+        scene.remove(axisHelper);
+        axisHelper = null;
+    }
+}); 
 
 const extrudeButton = document.getElementById("extrude");
 extrudeButton.addEventListener("click", () => {
@@ -295,7 +354,7 @@ saveObjectButton.addEventListener("click", () => {
             console.error('GLTFExporter error:', error);
             alert('Failed to export object: ' + error.message);
         },
-        { binary: false } // Set to true to export as .glb instead
+        { binary: true } // Set to true to export as .glb instead
     );
 });
 
@@ -325,6 +384,15 @@ groupButton.addEventListener("click", () => {
 });
 
  
+const colorPicker = document.getElementById("color picker");
+colorPicker.addEventListener("input", () => {
+    const color = new THREE.Color(colorPicker.value);
+    selectedObjects.forEach(obj => {
+        if (obj.material) {
+            obj.material.color.set(color);
+        }
+    });
+});
 
 window.addEventListener('keydown', (event) => {
 
